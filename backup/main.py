@@ -19,7 +19,7 @@ from ui.strategies_tab import render_strategies_tab
 from ui.heatmap_tab import render_heatmap_tab
 from ui.forecast_chart import render_forecast_chart
 from ui.income_tab import render_income_tab
-from config import PAGE_TITLE, PAGE_ICON, LAYOUT, INITIAL_SIDEBAR_STATE, APP_VERSION
+
 
 # ==================== КОНСТАНТЫ ====================
 
@@ -31,10 +31,13 @@ APP_ICON = "🔥"
 # ==================== НАСТРОЙКА СТРАНИЦЫ ====================
 
 st.set_page_config(
-    page_title=PAGE_TITLE,
-    page_icon=PAGE_ICON,
-    layout=LAYOUT,
-    initial_sidebar_state=INITIAL_SIDEBAR_STATE
+    page_title=APP_TITLE,
+    page_icon=APP_ICON,
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'About': f"{APP_TITLE} {APP_VERSION} - Управление кредитами и вкладами"
+    }
 )
 
 
@@ -81,23 +84,16 @@ if not initialize_database():
 
 # ==================== ЗАГРУЗКА ДАННЫХ ====================
 
-@st.cache_data(ttl=5)  # ИСПРАВЛЕНО: Кэш на 5 секунд вместо 10
+@st.cache_data(ttl=10)  # Кэш на 10 секунд
 def load_credits():
     """Загрузка кредитов с кэшированием"""
     return get_all_credits()
 
 
-@st.cache_data(ttl=5)  # ИСПРАВЛЕНО: Кэш на 5 секунд вместо 10
+@st.cache_data(ttl=10)  # Кэш на 10 секунд
 def load_deposits():
     """Загрузка вкладов с кэшированием"""
     return get_all_deposits()
-
-
-# ДОБАВЛЕНО: Функция для очистки кэша
-def refresh_data():
-    """Очистка кэша и перезагрузка данных"""
-    st.cache_data.clear()
-    st.rerun()
 
 
 # Загружаем данные
@@ -149,8 +145,9 @@ def render_sidebar():
         # Быстрые действия
         st.subheader("⚡ Быстрые действия")
         
-        if st.button("🔄 Обновить данные", use_container_width=True, key="refresh_btn"):
-            refresh_data()
+        if st.button("🔄 Обновить данные", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
         
         if st.button("📥 Экспорт данных", use_container_width=True):
             st.info("🚧 Функция в разработке")

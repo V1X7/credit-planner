@@ -3,8 +3,23 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import pandas as pd
-from ui.utils import create_credit_object, create_deposit_object
-from config import CREDIT_COLORS, DEPOSIT_COLOR, INTERSECTION_COLOR, CACHE_TTL
+
+
+# ==================== КОНСТАНТЫ ====================
+
+CREDIT_COLORS = [
+    "#FF6B6B",  # Красный
+    "#FFA07A",  # Оранжевый
+    "#FFD700",  # Жёлтый
+    "#98D8C8",  # Бирюзовый
+    "#DDA0DD",  # Фиолетовый
+    "#F08080",  # Коралловый
+    "#87CEEB",  # Небесно-голубой
+    "#FF69B4",  # Розовый
+]
+
+DEPOSIT_COLOR = "#4ECDC4"  # Бирюзовый
+INTERSECTION_COLOR = "#FFD700"  # Золотой
 
 
 # ==================== ОСНОВНАЯ ФУНКЦИЯ ====================
@@ -22,6 +37,7 @@ def render_forecast_chart(credits, deposits):
     - ⭐ **Точки пересечения** — даты, когда можно закрыть кредит средствами вкладов
     """)
     
+    # ИСПРАВЛЕНО: Проверка только на наличие хотя бы одного источника данных
     if not credits and not deposits:
         st.warning("⚠️ Добавьте кредиты или вклады для построения прогноза")
         return
@@ -30,7 +46,7 @@ def render_forecast_chart(credits, deposits):
     
     # ==================== НАСТРОЙКИ ОТОБРАЖЕНИЯ ====================
     
-    chart_height, forecast_years, show_facts, show_forecasts, show_intersections, show_only_first_intersection = render_display_settings()
+    chart_height, forecast_years, show_facts, show_forecasts, show_intersections = render_display_settings()
     
     st.divider()
     
@@ -57,7 +73,7 @@ def render_forecast_chart(credits, deposits):
                     credit_info['data'],
                     forecast_years
                 )
-                if timeline:
+                if timeline:  # ИСПРАВЛЕНО: Проверка на пустой timeline
                     credits_timelines[credit_info['id']] = {
                         'timeline': timeline,
                         'name': credit_info['data'].get('name', 'Без названия'),
@@ -80,13 +96,10 @@ def render_forecast_chart(credits, deposits):
     
     # ==================== ПОСТРОЕНИЕ ГРАФИКА ====================
     
+    # ИСПРАВЛЕНО: Проверка на наличие данных для графика
     if not credits_timelines and not deposits_timeline:
         st.error("❌ Нет данных для построения графика")
         return
-    
-    # ДОБАВЛЕНО: Фильтруем пересечения
-    if show_only_first_intersection and intersections:
-        intersections = intersections[:1]  # Только первое пересечение
     
     fig = create_forecast_figure(
         credits_timelines,
@@ -173,16 +186,8 @@ def render_display_settings():
             value=True,
             key="show_intersections"
         )
-        
-        # ДОБАВЛЕНО: Фильтр пересечений
-        show_only_first_intersection = st.checkbox(
-            "🎯 Показывать только первое пересечение",
-            value=True,
-            key="show_only_first_intersection",
-            help="Если отключено, будут видны все точки пересечения"
-        )
     
-    return chart_height, forecast_years, show_facts, show_forecasts, show_intersections, show_only_first_intersection
+    return chart_height, forecast_years, show_facts, show_forecasts, show_intersections
 
 
 # ==================== ВЫБОР КРЕДИТОВ ====================
@@ -204,6 +209,7 @@ def render_credit_selector(credits):
         color = CREDIT_COLORS[i % len(CREDIT_COLORS)]
         
         with cols[i % num_cols]:
+            # ИСПРАВЛЕНО: Безопасное получение значений с float()
             name = str(credit_dict.get('name', 'Без названия'))
             balance = float(credit_dict.get('balance', 0))
             rate = float(credit_dict.get('annual_rate', 0))
@@ -258,7 +264,6 @@ def calculate_credit_timeline(credit_dict, forecast_years):
     timeline = {}
     current_date = datetime.now()
     current_balance = balance
-    closure_date = None
     
     # Расчёт на период прогноза
     months = forecast_years * 12
@@ -285,14 +290,15 @@ def calculate_credit_timeline(credit_dict, forecast_years):
         # Не уходим в минус
         current_balance = max(0, current_balance)
         
-        # Если кредит погашен, сохраняем дату и прерываем цикл
-        if current_balance <= 0.01 and closure_date is None:
-            closure_date = date
+        # Если кредит погашен, заполняем остаток нулями
+        if current_balance <= 0.01:  # ИСПРАВЛЕНО: Учёт погрешности
+            for remaining_month in range(month + 1, months + 1):
+                future_date = current_date + relativedelta(months=remaining_month)
+                timeline[future_date] = {
+                    'balance': 0,
+                    'type': 'forecast'
+                }
             break
-    
-    # Сохраняем дату закрытия в timeline
-    if closure_date:
-        timeline['_closure_date'] = closure_date
     
     return timeline
 
@@ -311,6 +317,7 @@ def calculate_deposits_timeline(deposits, forecast_years):
     if total_balance <= 0:
         return {}
     
+    # ИСПРАВЛЕНО: Защита от деления на ноль
     try:
         weighted_rate = sum(
             float(d[1].get('balance', 0)) * float(d[1].get('annual_rate', 0))
@@ -348,20 +355,14 @@ def calculate_sequential_intersections(selected_credits, deposits_timeline, cred
     if not selected_credits or not deposits_timeline:
         return []
     
-    # Фильтруем только datetime ключи из deposits_timeline
-    deposit_dates = sorted([d for d in deposits_timeline.keys() if isinstance(d, datetime)])
-    
-    if not deposit_dates:
-        return []
-    
-    intersections = []
-    accumulated_closed = 0
-    
     # Сортируем кредиты по остатку (сначала маленькие)
     sorted_credits = sorted(
         selected_credits,
         key=lambda c: float(c['data'].get('balance', 0))
     )
+    
+    intersections = []
+    accumulated_closed = 0
     
     for i, credit_info in enumerate(sorted_credits):
         credit_id = credit_info['id']
@@ -371,38 +372,20 @@ def calculate_sequential_intersections(selected_credits, deposits_timeline, cred
         if not credit_timeline:
             continue
         
-        # Фильтруем только datetime ключи из credit_timeline
-        credit_dates = sorted([d for d in credit_timeline.keys() if isinstance(d, datetime)])
-        
-        if not credit_dates:
-            continue
-        
         # Ищем точку пересечения
         intersection_date = None
         intersection_amount = None
         
-        # Проходим по датам вкладов
-        for deposit_date in deposit_dates:
-            # Получаем баланс вклада на эту дату
-            deposit_balance = deposits_timeline.get(deposit_date, {}).get('balance', 0)
-            
-            # Ищем баланс кредита на эту же дату (или ближайшую предыдущую)
-            credit_balance = None
-            for credit_date in credit_dates:
-                if credit_date <= deposit_date:
-                    credit_balance = credit_timeline[credit_date]['balance']
-                else:
-                    break
-            
-            if credit_balance is None:
-                continue
+        for date in sorted(credit_timeline.keys()):
+            credit_balance = credit_timeline[date]['balance']
+            deposit_balance = deposits_timeline.get(date, {}).get('balance', 0)
             
             # Вычитаем то, что уже потратили на предыдущие кредиты
             available_deposits = deposit_balance - accumulated_closed
             
-            # Проверяем пересечение: вклады >= кредит
+            # ИСПРАВЛЕНО: Учёт погрешности
             if available_deposits >= credit_balance and credit_balance > 0.01:
-                intersection_date = deposit_date
+                intersection_date = date
                 intersection_amount = credit_balance
                 break
         
@@ -449,14 +432,7 @@ def create_forecast_figure(credits_timelines, deposits_timeline, intersections,
         name = credit_info.get('name', 'Без названия')
         color = credit_info.get('color', '#FF6B6B')
         
-        # Извлекаем дату закрытия ДО сортировки
-        closure_date = timeline.pop('_closure_date', None)
-        
-        # Фильтруем только datetime объекты перед сортировкой
-        dates = sorted([d for d in timeline.keys() if isinstance(d, datetime)])
-        
-        if not dates:
-            continue
+        dates = sorted(timeline.keys())
         
         # Разделяем на факт и прогноз
         fact_dates = [d for d in dates if timeline[d]['type'] == 'fact']
@@ -484,67 +460,25 @@ def create_forecast_figure(credits_timelines, deposits_timeline, intersections,
         
         # Пунктирная линия (прогноз)
         if show_forecasts and forecast_dates:
-            # Фильтруем даты прогноза до даты закрытия
-            if closure_date:
-                forecast_dates = [d for d in forecast_dates if d <= closure_date]
-            
             if fact_dates and fact_balances:
                 forecast_dates_full = [fact_dates[-1]] + forecast_dates
-                forecast_balances_full = [fact_balances[-1]] + [timeline[d]['balance'] for d in forecast_dates]
+                forecast_balances_full = [fact_balances[-1]] + forecast_balances
             else:
                 forecast_dates_full = forecast_dates
-                forecast_balances_full = [timeline[d]['balance'] for d in forecast_dates]
+                forecast_balances_full = forecast_balances
             
-            if forecast_dates_full:
-                fig.add_trace(go.Scatter(
-                    x=forecast_dates_full,
-                    y=forecast_balances_full,
-                    name=f"🔮 {name} (прогноз)",
-                    line=dict(color=color, width=2, dash='dash'),
-                    mode='lines',
-                    legendgroup=f"credit_{credit_id}",
-                    showlegend=False,
-                    hovertemplate=(
-                        f"<b>{name} (прогноз)</b><br>"
-                        "📅 %{x|%d.%m.%Y}<br>"
-                        "💰 %{y:,.0f} ₽<br>"
-                        "<extra></extra>"
-                    )
-                ))
-        
-        # Вертикальная линия закрытия кредита
-        if closure_date:
-            max_balance = max([timeline[d]['balance'] for d in dates] + [0])
-            
-            fig.add_shape(
-                type="line",
-                x0=closure_date,
-                y0=0,
-                x1=closure_date,
-                y1=max_balance * 1.1,
-                line=dict(color=color, width=2, dash="dash"),
-                layer="below",
-                opacity=0.5
-            )
-            
-            # Маркер в точке закрытия
             fig.add_trace(go.Scatter(
-                x=[closure_date],
-                y=[0],
-                mode='markers',
-                marker=dict(
-                    symbol='circle-open',
-                    size=12,
-                    color=color,
-                    line=dict(color=color, width=2)
-                ),
-                name=f"✅ {name} закрыт",
+                x=forecast_dates_full,
+                y=forecast_balances_full,
+                name=f"🔮 {name} (прогноз)",
+                line=dict(color=color, width=2, dash='dash'),
+                mode='lines',
                 legendgroup=f"credit_{credit_id}",
                 showlegend=False,
                 hovertemplate=(
-                    f"<b>✅ {name} закрыт</b><br>"
-                    f"📅 {closure_date.strftime('%d.%m.%Y')}<br>"
-                    f"⏱️ Через {(closure_date - datetime.now()).days} дней<br>"
+                    f"<b>{name} (прогноз)</b><br>"
+                    "📅 %{x|%d.%m.%Y}<br>"
+                    "💰 %{y:,.0f} ₽<br>"
                     "<extra></extra>"
                 )
             ))
@@ -552,68 +486,54 @@ def create_forecast_figure(credits_timelines, deposits_timeline, intersections,
     # ==================== КРИВАЯ ВКЛАДОВ ====================
     
     if deposits_timeline:
-        # Фильтруем только datetime объекты перед сортировкой
-        dates = sorted([d for d in deposits_timeline.keys() if isinstance(d, datetime)])
+        dates = sorted(deposits_timeline.keys())
+        fact_dates = [d for d in dates if deposits_timeline[d]['type'] == 'fact']
+        forecast_dates = [d for d in dates if deposits_timeline[d]['type'] == 'forecast']
         
-        if dates:
-            # ДОБАВЛЕНО: Определяем дату первого пересечения
-            first_intersection_date = None
-            if intersections:
-                first_intersection_date = intersections[0]['date']
+        fact_balances = [deposits_timeline[d]['balance'] for d in fact_dates]
+        forecast_balances = [deposits_timeline[d]['balance'] for d in forecast_dates]
+        
+        # Сплошная линия вкладов
+        if show_facts and fact_dates:
+            fig.add_trace(go.Scatter(
+                x=fact_dates,
+                y=fact_balances,
+                name="💎 Вклады",
+                line=dict(color=DEPOSIT_COLOR, width=3),
+                mode='lines',
+                legendgroup="deposits",
+                hovertemplate=(
+                    "<b>Вклады</b><br>"
+                    "📅 %{x|%d.%m.%Y}<br>"
+                    "💰 %{y:,.0f} ₽<br>"
+                    "<extra></extra>"
+                )
+            ))
+        
+        # Пунктирная линия вкладов
+        if show_forecasts and forecast_dates:
+            if fact_dates and fact_balances:
+                forecast_dates_full = [fact_dates[-1]] + forecast_dates
+                forecast_balances_full = [fact_balances[-1]] + forecast_balances
+            else:
+                forecast_dates_full = forecast_dates
+                forecast_balances_full = forecast_balances
             
-            fact_dates = [d for d in dates if deposits_timeline[d]['type'] == 'fact']
-            forecast_dates = [d for d in dates if deposits_timeline[d]['type'] == 'forecast']
-            
-            # ДОБАВЛЕНО: Обрезаем даты до первого пересечения
-            if first_intersection_date:
-                fact_dates = [d for d in fact_dates if d <= first_intersection_date]
-                forecast_dates = [d for d in forecast_dates if d <= first_intersection_date]
-            
-            fact_balances = [deposits_timeline[d]['balance'] for d in fact_dates]
-            forecast_balances = [deposits_timeline[d]['balance'] for d in forecast_dates]
-            
-            # Сплошная линия вкладов (факт)
-            if show_facts and fact_dates:
-                fig.add_trace(go.Scatter(
-                    x=fact_dates,
-                    y=fact_balances,
-                    name="💎 Вклады",
-                    line=dict(color=DEPOSIT_COLOR, width=3),
-                    mode='lines',
-                    legendgroup="deposits",
-                    hovertemplate=(
-                        "<b>Вклады</b><br>"
-                        "📅 %{x|%d.%m.%Y}<br>"
-                        "💰 %{y:,.0f} ₽<br>"
-                        "<extra></extra>"
-                    )
-                ))
-            
-            # Пунктирная линия вкладов (прогноз)
-            if show_forecasts and forecast_dates:
-                if fact_dates and fact_balances:
-                    forecast_dates_full = [fact_dates[-1]] + forecast_dates
-                    forecast_balances_full = [fact_balances[-1]] + [deposits_timeline[d]['balance'] for d in forecast_dates]
-                else:
-                    forecast_dates_full = forecast_dates
-                    forecast_balances_full = [deposits_timeline[d]['balance'] for d in forecast_dates]
-                
-                if forecast_dates_full:
-                    fig.add_trace(go.Scatter(
-                        x=forecast_dates_full,
-                        y=forecast_balances_full,
-                        name="🔮 Вклады (прогноз)",
-                        line=dict(color=DEPOSIT_COLOR, width=3, dash='dot'),
-                        mode='lines',
-                        legendgroup="deposits",
-                        showlegend=False,
-                        hovertemplate=(
-                            "<b>Вклады (прогноз)</b><br>"
-                            "📅 %{x|%d.%m.%Y}<br>"
-                            "💰 %{y:,.0f} ₽<br>"
-                            "<extra></extra>"
-                        )
-                    ))
+            fig.add_trace(go.Scatter(
+                x=forecast_dates_full,
+                y=forecast_balances_full,
+                name="🔮 Вклады (прогноз)",
+                line=dict(color=DEPOSIT_COLOR, width=2, dash='dash'),
+                mode='lines',
+                legendgroup="deposits",
+                showlegend=False,
+                hovertemplate=(
+                    "<b>Вклады (прогноз)</b><br>"
+                    "📅 %{x|%d.%m.%Y}<br>"
+                    "💰 %{y:,.0f} ₽<br>"
+                    "<extra></extra>"
+                )
+            ))
     
     # ==================== ТОЧКИ ПЕРЕСЕЧЕНИЯ ====================
     
@@ -707,18 +627,6 @@ def render_intersections_metrics(intersections):
     """Отображение метрик точек пересечения"""
     
     st.subheader("⭐ Точки пересечения (последовательное закрытие)")
-    
-    # Подсказка о днях до первого пересечения
-    if intersections:
-        first_intersection = intersections[0]
-        days_left = first_intersection['days_from_now']
-        
-        if days_left > 0:
-            st.info(f"⏳ **До сравнения вклад = кредит осталось {days_left} дней** ({days_left/30:.1f} месяцев)")
-        elif days_left == 0:
-            st.success("✅ **Сегодня вклад равен кредиту!**")
-        else:
-            st.warning(f"⚠️ **Пересечение было {abs(days_left)} дней назад**")
     
     st.write("График показывает **последовательное** закрытие кредитов (от меньшего к большему):")
     
@@ -816,42 +724,42 @@ def render_what_if_scenarios(selected_credits, deposits, forecast_years, credits
             help="Дополнительный платёж к стандартному"
         )
     
-        with col2:
-            extra_deposit = st.number_input(
-                "💎 Пополнение вкладов/месяц (₽)",
-                min_value=0,
-                max_value=500_000,
-                value=0,
-                step=5_000,
-                key="extra_deposit_scenario",
-                help="Ежемесячное пополнение вкладов"
-            )
-        
-        with col3:
-            rate_increase = st.number_input(
-                "📈 Изменение ставки вкладов (%)",
-                min_value=-10.0,
-                max_value=10.0,
-                value=0.0,
-                step=0.5,
-                key="rate_change_scenario",
-                help="Изменение ставки (может быть отрицательным)"
-            )
-        
-        if st.button("🔄 Пересчитать прогноз", type="primary", use_container_width=True):
-            if extra_payment == 0 and extra_deposit == 0 and rate_increase == 0:
-                st.warning("⚠️ Измените хотя бы один параметр для пересчёта")
-            else:
-                st.info("🚧 Функция 'Что если?' в разработке. Скоро добавим полный пересчёт с новыми параметрами!")
-                
-                if extra_payment > 0:
-                    total_extra_year = extra_payment * 12
-                    st.success(f"✅ **Досрочные платежи:** {extra_payment:,.0f} ₽/мес = {total_extra_year:,.0f} ₽/год")
-                
-                if extra_deposit > 0:
-                    total_deposit_year = extra_deposit * 12
-                    st.success(f"✅ **Пополнение вкладов:** {extra_deposit:,.0f} ₽/мес = {total_deposit_year:,.0f} ₽/год")
-                
-                if rate_increase != 0:
-                    direction = "увеличение" if rate_increase > 0 else "уменьшение"
-                    st.success(f"✅ **Изменение ставки:** {direction} на {abs(rate_increase):.1f}%")
+    with col2:
+        extra_deposit = st.number_input(
+            "💎 Пополнение вкладов/месяц (₽)",
+            min_value=0,
+            max_value=500_000,
+            value=0,
+            step=5_000,
+            key="extra_deposit_scenario",
+            help="Ежемесячное пополнение вкладов"
+        )
+    
+    with col3:
+        rate_increase = st.number_input(
+            "📈 Изменение ставки вкладов (%)",
+            min_value=-10.0,
+            max_value=10.0,
+            value=0.0,
+            step=0.5,
+            key="rate_change_scenario",
+            help="Изменение ставки (может быть отрицательным)"
+        )
+    
+    if st.button("🔄 Пересчитать прогноз", type="primary"):
+        if extra_payment == 0 and extra_deposit == 0 and rate_increase == 0:
+            st.warning("⚠️ Измените хотя бы один параметр для пересчёта")
+        else:
+            st.info("🚧 Функция 'Что если?' в разработке. Скоро добавим полный пересчёт с новыми параметрами!")
+            
+            if extra_payment > 0:
+                total_extra_year = extra_payment * 12
+                st.success(f"✅ **Досрочные платежи:** {extra_payment:,.0f} ₽/мес = {total_extra_year:,.0f} ₽/год")
+            
+            if extra_deposit > 0:
+                total_deposit_year = extra_deposit * 12
+                st.success(f"✅ **Пополнение вкладов:** {extra_deposit:,.0f} ₽/мес = {total_deposit_year:,.0f} ₽/год")
+            
+            if rate_increase != 0:
+                direction = "увеличение" if rate_increase > 0 else "уменьшение"
+                st.success(f"✅ **Изменение ставки:** {direction} на {abs(rate_increase):.1f}%")

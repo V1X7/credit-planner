@@ -3,17 +3,10 @@ from datetime import datetime, timedelta, date
 import plotly.graph_objects as go
 import pandas as pd
 from models import Credit, Deposit
-from ui.logger import log_action, log_credit_action, log_deposit_action
-from config import DEBT_RATIO_WARNING, DEBT_RATIO_CRITICAL, CURRENCY_FORMAT
 
 
 def render_dashboard(credits, deposits):
     """Дашборд с полной статистикой"""
-    
-    log_action("DASHBOARD_OPENED", {
-        'credits_count': len(credits),
-        'deposits_count': len(deposits)
-    })
     
     st.header("📊 Дашборд")
     
@@ -443,10 +436,10 @@ def render_dashboard(credits, deposits):
         difference = total_deposit_income - total_interest_paid
         recommendations.append(("success", f"✅ Доходы от вкладов ({total_deposit_income:,.0f} ₽) покрывают проценты по кредитам ({total_interest_paid:,.0f} ₽). Профит: {difference:,.0f} ₽"))
     
-    if debt_ratio > DEBT_RATIO_CRITICAL:
-        st.error("❌ Долг больше сбережений!")
-    elif debt_ratio > DEBT_RATIO_WARNING:
-        st.warning("⚠️ Высокий уровень долга")
+    if debt_ratio > 100:
+        recommendations.append(("error", f"🚨 Коэффициент долга превышает 100% ({debt_ratio:.1f}%). Долг больше сбережений!"))
+    elif debt_ratio > 50:
+        recommendations.append(("warning", f"⚠️ Коэффициент долга высокий ({debt_ratio:.1f}%). Рекомендуем снизить долги."))
     elif debt_ratio > 0:
         recommendations.append(("success", f"✅ Коэффициент долга в норме ({debt_ratio:.1f}%)"))
     

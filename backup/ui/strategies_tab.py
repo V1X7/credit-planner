@@ -3,7 +3,6 @@ from datetime import datetime
 import plotly.graph_objects as go
 import pandas as pd
 from models import Credit
-from ui.utils import create_credit_object
 
 
 def render_strategies_tab(credits, deposits):
@@ -32,34 +31,25 @@ def render_strategies_tab(credits, deposits):
     col1, col2 = st.columns(2)
     
     with col1:
-        # ИСПРАВЛЕНО: Получаем сумму из последнего распределения
+        # Получаем сумму из последнего распределения
         from database import get_latest_distribution
         
         distribution = get_latest_distribution()
         
-        if distribution and 'extra_payments' in distribution:
-            default_extra = float(distribution.get('extra_payments', 0))
-            
-            if default_extra > 0:
-                st.success(f"💡 **Из распределения от {distribution['date']}:** {default_extra:,.0f} ₽")
-            else:
-                st.warning("⚠️ В распределении дохода досрочные платежи = 0 ₽")
-                st.info("💡 Настройте распределение на вкладке '💰 Доход'")
+        if distribution:
+            default_extra = float(distribution.get('extra_payments', 50000))
+            st.success(f"💡 **Из распределения от {distribution['date']}:** {default_extra:,.0f} ₽")
         else:
-            default_extra = 0.0
-            st.warning("⚠️ Распределение дохода не найдено")
-            st.info("💡 Настройте распределение на вкладке '💰 Доход'")
+            default_extra = 50000.0
+            st.info("💡 Распределений нет. Используется значение по умолчанию.")
         
         extra_amount = st.number_input(
             "Сумма досрочного платежа (₽)",
-            min_value=0.0,
+            min_value=1000.0,
             value=default_extra,
             step=1000.0,
             help="Автоматически подтягивается из последнего распределения дохода"
         )
-        
-        if extra_amount == 0:
-            st.error("❌ Сумма досрочного платежа = 0. Анализ стратегий недоступен.")
     
     with col2:
         frequency = st.selectbox(
@@ -67,12 +57,6 @@ def render_strategies_tab(credits, deposits):
             ["Разово", "Ежемесячно", "Ежеквартально", "Раз в полгода"],
             help="Как часто вы будете вносить досрочно"
         )
-    
-    # Если сумма = 0, не показываем стратегии
-    if extra_amount == 0:
-        st.divider()
-        st.info("💡 Для анализа стратегий укажите сумму досрочного платежа или настройте распределение дохода на вкладке '💰 Доход'.")
-        return
     
     st.divider()
     
@@ -131,6 +115,20 @@ def render_current_state(credits):
     
     with col3:
         st.metric("📉 Всего процентов", f"{total_interest:,.0f} ₽")
+
+
+def create_credit_object(credit_dict):
+    """Безопасное создание объекта Credit"""
+    
+    return Credit(
+        name=credit_dict.get('name', 'Без названия'),
+        balance=float(credit_dict.get('balance', 0)),
+        annual_rate=float(credit_dict.get('annual_rate', 0)),
+        monthly_payment=float(credit_dict.get('monthly_payment', 0)),
+        start_date=credit_dict.get('start_date', datetime.now()),
+        payment_day=int(credit_dict.get('payment_day', 10)),
+        end_date=credit_dict.get('end_date')
+    )
 
 
 def render_strategy(credits, extra_amount, sort_key, reverse, title, emoji, description):
@@ -401,6 +399,7 @@ def render_comparison(credits, extra_amount):
             - Улучшится финансовая гибкость
             """)
         
+        # Дополнительная информация
         st.info(f"""
         **Следующий шаг:**
         Внесите {extra_amount:,.0f} ₽ досрочным платежом на кредит **"{best['credit']}"**

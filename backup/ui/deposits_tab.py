@@ -58,8 +58,7 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                 name = st.text_input(
                     "Название вклада *",
                     placeholder="Например: Вклад Сбер Максимальный",
-                    help="Укажите название для удобной идентификации",
-                    key="add_dep_name"
+                    help="Укажите название для удобной идентификации"
                 )
                 
                 balance = st.number_input(
@@ -68,8 +67,7 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                     value=100000.0,
                     step=1000.0,
                     format="%.2f",
-                    help="Текущая сумма на вкладе",
-                    key="add_dep_balance"
+                    help="Текущая сумма на вкладе"
                 )
                 
                 annual_rate = st.number_input(
@@ -79,30 +77,23 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                     value=5.0,
                     step=0.1,
                     format="%.2f",
-                    help="Процентная ставка по вкладу",
-                    key="add_dep_rate"
+                    help="Процентная ставка по вкладу"
                 )
             
             with col2:
                 start_date = st.date_input(
                     "Дата открытия *",
                     value=datetime.now(),
-                    help="Когда был открыт вклад",
-                    key="add_dep_start"
+                    help="Когда был открыт вклад"
                 )
                 
-                has_end_date = st.checkbox(
-                    "Указать дату закрытия",
-                    value=False,
-                    key="add_dep_has_end"
-                )
+                has_end_date = st.checkbox("Указать дату закрытия", value=False)
                 
                 if has_end_date:
                     end_date = st.date_input(
                         "Дата закрытия",
                         value=datetime.now() + timedelta(days=365),
-                        help="Когда планируется закрытие вклада",
-                        key="add_dep_end"
+                        help="Когда планируется закрытие вклада"
                     )
                 else:
                     end_date = None
@@ -110,8 +101,7 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                 auto_renewal = st.checkbox(
                     "Автопролонгация",
                     value=False,
-                    help="Автоматическое продление вклада",
-                    key="add_dep_renewal"
+                    help="Автоматическое продление вклада"
                 )
             
             st.markdown("---")
@@ -156,8 +146,6 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                     
                     if result:
                         st.success(f"✅ Вклад '{name}' успешно добавлен!")
-                        # ИСПРАВЛЕНО: Очищаем кэш перед rerun
-                        st.cache_data.clear()
                         st.rerun()
     
     # ==================== TAB 2: СПИСОК ====================
@@ -201,26 +189,7 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
             if isinstance(deposit_start, date) and not isinstance(deposit_start, datetime):
                 deposit_start = datetime.combine(deposit_start, datetime.min.time())
             
-            # ИСПРАВЛЕНО: Сохраняем состояние expander в session_state
-            expander_key = f"expander_deposit_{deposit_id}"
-            if expander_key not in st.session_state:
-                st.session_state[expander_key] = False
-            
-            # ИСПРАВЛЕНО: expanded берём из session_state
-            expanded = st.session_state[expander_key]
-            
-            with st.expander(
-                f"💎 {deposit_name} — {deposit_balance:,.0f} ₽ @ {deposit_rate}%",
-                expanded=expanded
-            ):
-                # ДОБАВЛЕНО: Кнопка для явного управления состоянием
-                if st.button(
-                    "📌 Закрепить открытым" if not expanded else "📌 Откреплено",
-                    key=f"pin_deposit_{deposit_id}",
-                    help="Удерживает вкладку открытой после обновления"
-                ):
-                    st.session_state[expander_key] = not st.session_state[expander_key]
-                    st.rerun()
+            with st.expander(f"💎 {deposit_name} — {deposit_balance:,.0f} ₽ @ {deposit_rate}%", expanded=False):
                 
                 # Информация о вкладе
                 col1, col2, col3 = st.columns(3)
@@ -238,6 +207,7 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                 
                 with col3:
                     if deposit_end:
+                        # Правильная работа с типами datetime
                         if isinstance(deposit_end, datetime):
                             days_left = (deposit_end - datetime.now()).days
                         elif isinstance(deposit_end, date):
@@ -247,6 +217,7 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                         
                         if days_left > 0:
                             st.metric("До закрытия", f"{days_left} дней")
+                            
                             months_left = days_left / 30
                             total_income = monthly_income * months_left
                             st.metric("Ожидаемый доход", f"{total_income:,.0f} ₽")
@@ -259,9 +230,12 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                 
                 st.markdown("---")
                 
+                # Дополнительная информация
                 col1, col2 = st.columns(2)
+                
                 with col1:
                     st.write(f"**📅 Дата открытия:** {deposit_start.strftime('%d.%m.%Y')}")
+                
                 with col2:
                     if deposit_end:
                         end_str = deposit_end.strftime('%d.%m.%Y') if isinstance(deposit_end, (datetime, date)) else str(deposit_end)
@@ -276,6 +250,7 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                 
                 if contributions:
                     st.write("**История пополнений:**")
+                    
                     total_contributions = sum(c['amount'] for c in contributions)
                     
                     for contrib in contributions:
@@ -291,11 +266,9 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                             st.write(f"💵 {contrib['amount']:,.0f} ₽")
                         
                         with col_delete:
-                            if st.button("🗑️", key=f"del_contrib_{contrib['id']}", use_container_width=True):
-                                # ИСПРАВЛЕНО: Запоминаем что вкладка была открыта
-                                st.session_state[expander_key] = True
+                            if st.button("🗑️", key=f"del_contrib_{contrib['id']}"):
                                 if db_delete_deposit_contribution(contrib['id']):
-                                    st.cache_data.clear()
+                                    st.success("✅ Пополнение удалено!")
                                     st.rerun()
                     
                     st.success(f"💰 **Всего пополнений:** {total_contributions:,.0f} ₽")
@@ -326,10 +299,8 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                     
                     if st.form_submit_button("➕ Добавить пополнение"):
                         if contrib_amount > 0:
-                            # ИСПРАВЛЕНО: Запоминаем что вкладка была открыта
-                            st.session_state[expander_key] = True
                             if add_deposit_contribution(deposit_id, contrib_date, contrib_amount):
-                                st.cache_data.clear()
+                                st.success(f"✅ Пополнение {contrib_amount:,.0f} ₽ добавлено!")
                                 st.rerun()
                         else:
                             st.error("❌ Сумма должна быть больше 0")
@@ -349,11 +320,16 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                     
                     with col2:
                         edit_start = st.date_input("Дата открытия", value=deposit_start, key=f"edit_dep_start_{deposit_id}")
+                        
                         edit_has_end = st.checkbox("Указать дату закрытия", value=deposit_end is not None, key=f"edit_dep_has_end_{deposit_id}")
                         
                         if edit_has_end:
                             default_end = deposit_end if deposit_end else datetime.now() + timedelta(days=365)
-                            edit_end = st.date_input("Дата закрытия", value=default_end, key=f"edit_dep_end_{deposit_id}")
+                            edit_end = st.date_input(
+                                "Дата закрытия", 
+                                value=default_end,
+                                key=f"edit_dep_end_{deposit_id}"
+                            )
                         else:
                             edit_end = None
                         
@@ -363,7 +339,6 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                     
                     with col_save:
                         if st.form_submit_button("💾 Сохранить изменения", type="primary", use_container_width=True):
-                            st.session_state[expander_key] = True
                             if update_deposit_func(
                                 deposit_id=deposit_id,
                                 name=edit_name,
@@ -374,16 +349,19 @@ def render_deposits_tab(deposits, save_deposit_func, update_deposit_func, delete
                                 auto_renewal=edit_renewal
                             ):
                                 st.success("✅ Вклад обновлён!")
-                                st.cache_data.clear()
                                 st.rerun()
                     
                     with col_delete:
                         if st.form_submit_button("🗑️ Удалить вклад", type="secondary", use_container_width=True):
-                            # При удалении не нужно сохранять состояние
-                            st.session_state.pop(expander_key, None)
-                            if delete_deposit_func(deposit_id):
-                                st.success("✅ Вклад удалён!")
-                                st.cache_data.clear()
+                            # Подтверждение удаления
+                            if st.session_state.get(f'confirm_delete_deposit_{deposit_id}', False):
+                                if delete_deposit_func(deposit_id):
+                                    st.success("✅ Вклад удалён!")
+                                    st.session_state[f'confirm_delete_deposit_{deposit_id}'] = False
+                                    st.rerun()
+                            else:
+                                st.session_state[f'confirm_delete_deposit_{deposit_id}'] = True
+                                st.warning("⚠️ Нажмите ещё раз для подтверждения удаления")
                                 st.rerun()
 
 

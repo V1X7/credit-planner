@@ -383,7 +383,7 @@ def get_extra_payments(credit_id: int) -> Dict:
         return {}
 
 
-def add_extra_payment(credit_id: int, date, amount: float, income_id: int = None) -> bool:
+def add_extra_payment(credit_id: int, date, amount: float) -> bool:
     """Добавление досрочного платежа"""
     if amount <= 0 or amount > 100_000_000:
         st.error("❌ Некорректная сумма")
@@ -412,10 +412,6 @@ def add_extra_payment(credit_id: int, date, amount: float, income_id: int = None
             'date': date_str,
             'amount': amount
         })
-        execute_query(
-            'INSERT INTO extra_payments_log (income_id, credit_id, amount, date) VALUES (?, ?, ?, ?)',
-            (income_id, credit_id, amount, date_str)
-        )
         st.success(f"✅ Досрочный платёж {amount:,.0f} ₽ добавлен!")
     
     return success
@@ -576,7 +572,7 @@ def get_deposit_contributions(deposit_id: int) -> List[Dict]:
     } for row in rows]
 
 
-def add_deposit_contribution(deposit_id: int, date, amount: float, income_id: int = None) -> bool:
+def add_deposit_contribution(deposit_id: int, date, amount: float) -> bool:
     """Добавление пополнения вклада"""
     if amount <= 0 or amount > 100_000_000:
         st.error("❌ Некорректная сумма")
@@ -584,22 +580,12 @@ def add_deposit_contribution(deposit_id: int, date, amount: float, income_id: in
     
     date_str = date.isoformat() if hasattr(date, 'isoformat') else str(date)
     
-    # ДОБАВЛЕНО: Сначала добавляем пополнение
     success = execute_query(
-        'INSERT INTO deposit_contributions (deposit_id, amount, date, income_id) VALUES (?, ?, ?, ?)',
-        (deposit_id, amount, date_str, income_id)
+        'INSERT INTO deposit_contributions (deposit_id, amount, date) VALUES (?, ?, ?)',
+        (deposit_id, amount, date_str)
     )
     
     if success:
-        # ДОБАВЛЕНО: Затем обновляем баланс вклада
-        deposit = get_deposit_by_id(deposit_id)
-        if deposit:
-            new_balance = deposit['balance'] + amount
-            execute_query(
-                'UPDATE deposits SET balance=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
-                (new_balance, deposit_id)
-            )
-        
         st.success(f"✅ Пополнение {amount:,.0f} ₽ добавлено!")
     
     return success
@@ -607,36 +593,9 @@ def add_deposit_contribution(deposit_id: int, date, amount: float, income_id: in
 
 def delete_deposit_contribution(contribution_id: int) -> bool:
     """Удаление пополнения вклада"""
-    
-    # ДОБАВЛЕНО: Сначала получаем данные пополнения
-    row = execute_query(
-        'SELECT deposit_id, amount FROM deposit_contributions WHERE id=?',
-        (contribution_id,),
-        fetch='one'
-    )
-    
-    if not row:
-        st.error("❌ Пополнение не найдено")
-        return False
-    
-    deposit_id = row['deposit_id']
-    amount = float(row['amount'])
-    
-    # Удаляем пополнение
     success = execute_query('DELETE FROM deposit_contributions WHERE id=?', (contribution_id,))
-    
     if success:
-        # ДОБАВЛЕНО: Обновляем баланс вклада (вычитаем сумму пополнения)
-        deposit = get_deposit_by_id(deposit_id)
-        if deposit:
-            new_balance = max(0, deposit['balance'] - amount)
-            execute_query(
-                'UPDATE deposits SET balance=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
-                (new_balance, deposit_id)
-            )
-        
         st.success("✅ Пополнение удалено!")
-    
     return success
 
 
@@ -953,23 +912,3 @@ def clear_all_data() -> bool:
     
     st.success("✅ Все данные удалены!")
     return True
-
-
-def check_income_deposit_done(income_id: int) -> float:
-    """Сумма пополнений вклада привязанных к доходу"""
-    row = execute_query(
-        "SELECT SUM(amount) as total FROM deposit_contributions WHERE income_id=?",
-        (income_id,),
-        fetch='one'
-    )
-    return float(row['total']) if row and row['total'] else 0.0
-
-
-def check_income_extra_done(income_id: int) -> float:
-    """Сумма досрочных платежей привязанных к доходу"""
-    row = execute_query(
-        "SELECT SUM(amount) as total FROM extra_payments_log WHERE income_id=?",
-        (income_id,),
-        fetch='one'
-    )
-    return float(row['total']) if row and row['total'] else 0.0

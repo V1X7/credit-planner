@@ -5,6 +5,7 @@ import logging
 import streamlit as st
 from datetime import datetime
 from pathlib import Path
+from config import LOGS_DIR, LOG_LEVEL, LOG_FORMAT
 
 
 # Создаём папку для логов
@@ -12,11 +13,11 @@ LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
 
 # Настройка логирования
-LOG_FILE = LOG_DIR / f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
+LOG_FILE = LOGS_DIR / f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=getattr(logging, LOG_LEVEL),
+    format=LOG_FORMAT,
     handlers=[
         logging.FileHandler(LOG_FILE),
         logging.StreamHandler()
