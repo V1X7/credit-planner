@@ -341,23 +341,46 @@ def render_calendar_tab(credits, deposits):
                     end_date=end_date_val
                 )
                 
-                schedule = credit.calculate_schedule(end_datetime)
+                # ✅ ИСПРАВЛЕННЫЙ КОД: Создаём платежи для каждого месяца в периоде
+                current_month = start_datetime.replace(day=1)
                 
-                for payment in schedule:
-                    payment_date = payment['date']
+                while current_month <= end_datetime:
+                    try:
+                        # Создаём дату платежа для текущего месяца
+                        payment_date = current_month.replace(day=payment_day)
+                        
+                        # Если день платежа больше дней в месяце (31 февраля), берём последний день
+                        if payment_date.month != current_month.month:
+                            payment_date = current_month.replace(day=1) - timedelta(days=1)
+                        
+                        # Проверяем, что дата в периоде
+                        if start_datetime <= payment_date <= end_datetime:
+                            # Рассчитываем баланс на эту дату для точности
+                            schedule_check = credit.calculate_schedule(payment_date)
+                            
+                            events.append({
+                                'date': payment_date,
+                                'type': 'regular_payment',
+                                'name': f"💳 {name}",
+                                'amount': -monthly_payment,
+                                'interest': float(schedule_check[-1].get('interest', 0)) if schedule_check else 0,
+                                'principal': float(schedule_check[-1].get('principal', 0)) if schedule_check else 0,
+                                'balance': float(schedule_check[-1].get('balance', 0)) if schedule_check else balance,
+                                'icon': '💳',
+                                'color': '#4ECDC4'
+                            })
+                        
+                    except ValueError:
+                        # День не существует в месяце — пропускаем
+                        pass
                     
-                    if start_datetime <= payment_date <= end_datetime:
-                        events.append({
-                            'date': payment_date,
-                            'type': 'regular_payment',
-                            'name': f"💳 {name}",
-                            'amount': -monthly_payment,
-                            'interest': float(payment.get('interest', 0)),
-                            'principal': float(payment.get('principal', 0)),
-                            'balance': float(payment.get('balance', 0)),
-                            'icon': '💳',
-                            'color': '#4ECDC4'
-                        })
+                    # Следующий месяц
+                    if current_month.month == 12:
+                        current_month = current_month.replace(year=current_month.year + 1, month=1)
+                    else:
+                        current_month = current_month.replace(month=current_month.month + 1)
+                
+                # ==================== ДОСРОЧНЫЕ ПЛАТЕЖИ ====================
                 
                 if filter_extra:
                     extra_payments = credit_dict.get('extra_payments', {})
