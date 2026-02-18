@@ -1,3 +1,4 @@
+# ui/heatmap_tab.py
 import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, date
@@ -7,11 +8,18 @@ from models import Credit
 from database import get_distribution_settings, get_income_settings, get_all_credits
 from ui.utils import create_credit_object, safe_float
 
-def calculate_roi_for_day(credit, extra_amount, payment_date):
-    """Расчёт ROI для конкретного дня с учётом дней до платежа"""
+
+@st.cache_data(ttl=600)
+def calculate_roi_for_day(credit_name: str, credit_balance: float, credit_rate: float, 
+                          credit_payment_day: int, extra_amount: float, 
+                          payment_date_str: str) -> dict:
+    """Расчёт ROI для конкретного дня с учётом дней до платежа (кэшировано)"""
+    from datetime import datetime, date
+    
+    payment_date = datetime.fromisoformat(payment_date_str)
     
     # Безопасное получение payment_day
-    payment_day = getattr(credit, 'payment_day', 10)
+    payment_day = int(credit_payment_day) if credit_payment_day else 10
     
     # Конвертация payment_date в datetime если нужно
     if isinstance(payment_date, date) and not isinstance(payment_date, datetime):
@@ -39,24 +47,24 @@ def calculate_roi_for_day(credit, extra_amount, payment_date):
     days_until_payment = (next_payment_date - payment_date).days
     
     if days_until_payment <= 0:
-        return {'roi': 0, 'savings': 0, 'new_balance': credit.balance, 'overpayment': 0}
+        return {'roi': 0, 'savings': 0, 'new_balance': credit_balance, 'overpayment': 0}
     
     # Проверка на переплату
     overpayment = 0
     actual_extra_amount = float(extra_amount)
     
-    if actual_extra_amount > credit.balance:
-        overpayment = actual_extra_amount - credit.balance
-        actual_extra_amount = credit.balance
+    if actual_extra_amount > credit_balance:
+        overpayment = actual_extra_amount - credit_balance
+        actual_extra_amount = credit_balance
     
     # Дневная ставка
-    daily_rate = float(credit.annual_rate) / 100 / 365
+    daily_rate = float(credit_rate) / 100 / 365
     
     # Проценты за период БЕЗ досрочного платежа
-    interest_standard = float(credit.balance) * daily_rate * days_until_payment
+    interest_standard = float(credit_balance) * daily_rate * days_until_payment
     
     # Проценты за период С досрочным платежом
-    new_balance = max(0, float(credit.balance) - actual_extra_amount)
+    new_balance = max(0, float(credit_balance) - actual_extra_amount)
     interest_with_extra = new_balance * daily_rate * days_until_payment
     
     # Экономия на процентах
@@ -85,7 +93,6 @@ def get_extra_payment_amount():
     
     # Если нет распределений, возвращаем 0
     return 0
-
 
 
 def render_heatmap_tab(credits, deposits):
@@ -229,7 +236,14 @@ def render_heatmap_amounts_tab(selected_credits, default_extra_payment):
                 total_savings = 0
                 
                 for credit in credit_objects:
-                    result = calculate_roi_for_day(credit, extra_amount, payment_date)
+                    result = calculate_roi_for_day(
+                        credit.name,
+                        credit.balance,
+                        credit.annual_rate,
+                        credit.payment_day,
+                        extra_amount,
+                        payment_date.isoformat()
+                    )
                     total_savings += result['savings']
                 
                 total_roi = (total_savings / extra_amount * 100) if extra_amount > 0 else 0
@@ -349,7 +363,14 @@ def render_recommendations_tab(selected_credits, default_extra_payment):
         
         total_savings = 0
         for credit in credit_objects:
-            result = calculate_roi_for_day(credit, default_extra_payment, payment_date)
+            result = calculate_roi_for_day(
+                credit.name,
+                credit.balance,
+                credit.annual_rate,
+                credit.payment_day,
+                default_extra_payment,  # ИСПРАВЛЕНО: Используем default_extra_payment
+                payment_date.isoformat()
+            )
             total_savings += result['savings']
         
         total_roi = (total_savings / default_extra_payment * 100) if default_extra_payment > 0 else 0
@@ -420,8 +441,18 @@ def render_distribution_strategy_tab(selected_credits, default_extra_payment):
     
     else:  # Оптимальная
         roi_list = []
+        today = datetime.now()
+        payment_date = today  # ИСПРАВЛЕНО: Определяем payment_date
+        
         for credit in credit_objects:
-            result = calculate_roi_for_day(credit, default_extra_payment, datetime.now())
+            result = calculate_roi_for_day(
+                credit.name,
+                credit.balance,
+                credit.annual_rate,
+                credit.payment_day,
+                default_extra_payment,  # ИСПРАВЛЕНО: Используем default_extra_payment
+                payment_date.isoformat()
+            )
             roi_list.append((credit, result['roi']))
         
         sorted_by_roi = sorted(roi_list, key=lambda x: x[1], reverse=True)
@@ -429,10 +460,20 @@ def render_distribution_strategy_tab(selected_credits, default_extra_payment):
     
     st.success("**📌 Рекомендация:**")
     
+    today = datetime.now()
+    payment_date = today  # ИСПРАВЛЕНО: Определяем payment_date
+    
     for credit in credit_objects:
         amount = distribution.get(credit.name, 0)
         if amount > 0:
-            result = calculate_roi_for_day(credit, amount, datetime.now())
+            result = calculate_roi_for_day(
+                credit.name,
+                credit.balance,
+                credit.annual_rate,
+                credit.payment_day,
+                amount,  # ИСПРАВЛЕНО: Используем amount вместо extra_amount
+                payment_date.isoformat()
+            )
             
             col1, col2, col3 = st.columns(3)
             
