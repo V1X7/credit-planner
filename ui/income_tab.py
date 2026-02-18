@@ -17,6 +17,7 @@ from database import (
     get_latest_distribution
 )
 from ui.utils import clear_session_state
+from ui.logger import log_income_action, log_action
 
 
 MONTH_NAMES = [
@@ -115,6 +116,9 @@ def render_income_tab():
                 
                 if income_id:
                     st.success(f"✅ Доход {income_amount:,.0f} ₽ добавлен!")
+                    log_income_action("ADDED", income_amount, income_type, {
+                        'date': income_date.strftime('%Y-%m-%d')
+                    })
                     
                     # Сохраняем распределение в session_state для отображения
                     st.session_state['new_income_id'] = income_id

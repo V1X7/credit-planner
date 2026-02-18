@@ -3,10 +3,16 @@ from datetime import datetime, timedelta, date
 import plotly.graph_objects as go
 import pandas as pd
 from models import Credit, Deposit
+from ui.logger import log_action, log_credit_action, log_deposit_action
 
 
 def render_dashboard(credits, deposits):
     """Дашборд с полной статистикой"""
+    
+    log_action("DASHBOARD_OPENED", {
+        'credits_count': len(credits),
+        'deposits_count': len(deposits)
+    })
     
     st.header("📊 Дашборд")
     
