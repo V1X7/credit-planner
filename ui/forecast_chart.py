@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import pandas as pd
+from ui.utils import create_credit_object, create_deposit_object
 
 
 # ==================== КОНСТАНТЫ ====================

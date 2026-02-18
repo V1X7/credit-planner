@@ -3,6 +3,7 @@ from datetime import datetime
 import plotly.graph_objects as go
 import pandas as pd
 from models import Credit
+from ui.utils import create_credit_object
 
 
 def render_strategies_tab(credits, deposits):
@@ -115,20 +116,6 @@ def render_current_state(credits):
     
     with col3:
         st.metric("📉 Всего процентов", f"{total_interest:,.0f} ₽")
-
-
-def create_credit_object(credit_dict):
-    """Безопасное создание объекта Credit"""
-    
-    return Credit(
-        name=credit_dict.get('name', 'Без названия'),
-        balance=float(credit_dict.get('balance', 0)),
-        annual_rate=float(credit_dict.get('annual_rate', 0)),
-        monthly_payment=float(credit_dict.get('monthly_payment', 0)),
-        start_date=credit_dict.get('start_date', datetime.now()),
-        payment_day=int(credit_dict.get('payment_day', 10)),
-        end_date=credit_dict.get('end_date')
-    )
 
 
 def render_strategy(credits, extra_amount, sort_key, reverse, title, emoji, description):

@@ -5,7 +5,7 @@ import calendar
 import pandas as pd
 from models import Credit
 from database import get_distribution_settings, get_income_settings, get_all_credits
-
+from ui.utils import create_credit_object, safe_float
 
 def calculate_roi_for_day(credit, extra_amount, payment_date):
     """Расчёт ROI для конкретного дня с учётом дней до платежа"""

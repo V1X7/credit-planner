@@ -16,6 +16,7 @@ from database import (
     get_distribution_logs,
     get_latest_distribution
 )
+from ui.utils import clear_session_state
 
 
 MONTH_NAMES = [
@@ -216,8 +217,7 @@ def render_auto_distribution_block(income_id: int, income_amount: float):
         st.error(f"❌ {distribution['error']}")
         
         # Удаляем из session_state
-        del st.session_state['new_income_id']
-        del st.session_state['new_income_amount']
+        clear_session_state('new_income_id', 'new_income_amount')
         return
     
     # Визуализация распределения
